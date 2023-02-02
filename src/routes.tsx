@@ -1,5 +1,6 @@
 import { useLoaderInstance } from "@tanstack/react-loaders";
-import { Outlet, ReactRouter, useParams } from "@tanstack/react-router";
+import { z } from "astro:content";
+import { Outlet, ReactRouter } from "@tanstack/react-router";
 import type { RegisteredLoaderClient } from "@tanstack/react-loaders";
 import { RootRoute, Route } from "@tanstack/router";
 import { loaderClient } from "./loaders";
@@ -22,16 +23,34 @@ const blogRoute = new Route({
   getParentRoute: () => rootRoute,
 });
 
-const blogPostRoute = new Route({
-  path: "$postId",
-  component: BlogPostPage,
-  onLoad: async ({ params: { postId }, preload, context }) =>
+const blogSearchRoute = new Route({
+  path: "search",
+  component: BlogSearchPage,
+  validateSearch: (unparsedSearch: Record<string, unknown>) => {
+    // TODO: pull from object map
+    // Not exposed by Astro content today!
+    const search = {
+      postId: z.enum(["first", "second"]).parse(unparsedSearch.postId),
+    };
+    return search;
+  },
+  onLoad: async ({ search: { postId }, preload, context }) =>
     context.loaderClient.getLoader({ key: "post" }).load({
       variables: postId,
       preload,
     }),
   getParentRoute: () => blogRoute,
 });
+
+const error404Route = new Route({
+  path: "404",
+  component: Error404Page,
+  getParentRoute: () => rootRoute,
+});
+
+function Error404Page() {
+  return <p>404!</p>;
+}
 
 function IndexPage() {
   return <p>Index!</p>;
@@ -46,11 +65,13 @@ function BlogPage() {
   );
 }
 
-function BlogPostPage() {
-  const { postId } = useParams({ from: blogPostRoute.id });
+function BlogSearchPage() {
+  // TODO: circle back to useSearch when SSR is fixed
+  // const { postId } = useSearch({ from: blogSearchRoute.id });
   const {
     state: { data: post },
-  } = useLoaderInstance({ key: "post", variables: postId });
+    // Hard code variables for now
+  } = useLoaderInstance({ key: "post", variables: "first" });
 
   return (
     <>
@@ -62,7 +83,8 @@ function BlogPostPage() {
 
 export const routeTree = rootRoute.addChildren([
   indexRoute,
-  blogRoute.addChildren([blogPostRoute]),
+  error404Route,
+  blogRoute.addChildren([blogSearchRoute]),
 ]);
 
 export const router = new ReactRouter({ routeTree, context: { loaderClient } });

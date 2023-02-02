@@ -1,15 +1,13 @@
 import { Loader, LoaderClient } from "@tanstack/react-loaders";
 import { CollectionEntry, getEntryBySlug } from "astro:content";
+import { router } from "./routes";
 
 export function createLoaderClient() {
   const postLoader = new Loader({
     key: "post",
     maxAge: Infinity,
-    loader: async (postId: string) => {
+    async loader(postId: CollectionEntry<"blog">["slug"]) {
       const post = await getEntryBySlug("blog", postId);
-      if (!post) {
-        throw new Error(`Post not found: ${postId}`);
-      }
       return post;
     },
   });
