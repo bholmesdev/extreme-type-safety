@@ -1,9 +1,8 @@
 import { useLoaderInstance } from "@tanstack/react-loaders";
-import { z } from "astro:content";
-import { Outlet, ReactRouter } from "@tanstack/react-router";
+import { Outlet, ReactRouter, useParams } from "@tanstack/react-router";
 import type { RegisteredLoaderClient } from "@tanstack/react-loaders";
 import { RootRoute, Route } from "@tanstack/router";
-import { loaderClient } from "./loaders";
+import { loaderClient, NotFoundError } from "./loaders";
 
 interface RouterContext {
   loaderClient: RegisteredLoaderClient;
@@ -13,78 +12,80 @@ const rootRoute = RootRoute.withRouterContext<RouterContext>()();
 
 const indexRoute = new Route({
   path: "/",
-  component: IndexPage,
-  getParentRoute: () => rootRoute,
-});
-
-const blogRoute = new Route({
-  path: "blog",
-  component: BlogPage,
-  getParentRoute: () => rootRoute,
-});
-
-const blogSearchRoute = new Route({
-  path: "search",
-  component: BlogSearchPage,
-  validateSearch: (unparsedSearch: Record<string, unknown>) => {
-    // TODO: pull from object map
-    // Not exposed by Astro content today!
-    const search = {
-      postId: z.enum(["first", "second"]).parse(unparsedSearch.postId),
-    };
-    return search;
+  async onLoad({ params, context }) {
+    return context.loaderClient.getLoader({ key: "blog" }).load();
   },
-  onLoad: async ({ search: { postId }, preload, context }) =>
-    context.loaderClient.getLoader({ key: "post" }).load({
-      variables: postId,
-      preload,
-    }),
-  getParentRoute: () => blogRoute,
+  component() {
+    const {
+      state: { data: blog },
+      // Hard code variables for now
+    } = useLoaderInstance({ key: "blog" });
+    return (
+      <main>
+        <h1>Blog</h1>
+        <ul>
+          {blog.map((post) => (
+            <li key={post.slug}>
+              <a href={`/blog/${post.slug}`}>{post.data.title}</a>
+            </li>
+          ))}
+        </ul>
+      </main>
+    );
+  },
+  getParentRoute: () => rootRoute,
 });
 
 const error404Route = new Route({
   path: "404",
-  component: Error404Page,
+  component() {
+    return <p>404!</p>;
+  },
   getParentRoute: () => rootRoute,
 });
 
-function Error404Page() {
-  return <p>404!</p>;
-}
+const blogPostRoute = new Route({
+  path: "/blog/$postId",
+  getParentRoute: () => rootRoute,
+  async onLoad({ params, context }) {
+    const result = await context.loaderClient
+      .getLoader({ key: "blogPost" })
+      .load({ variables: params.postId });
+    return result;
+  },
+  component: BlogPostPage,
+  errorComponent: ({ error }) => {
+    if (error instanceof NotFoundError) {
+      return <div>Post with id "{error.data}" found!</div>;
+    }
 
-function IndexPage() {
-  return <p>Index!</p>;
-}
+    return (
+      <div>
+        Oops! <pre>{JSON.stringify(error, null, 2)}</pre>
+      </div>
+    );
+  },
+});
 
-function BlogPage() {
-  return (
-    <>
-      <h1>Blog</h1>
-      <Outlet />
-    </>
-  );
-}
-
-function BlogSearchPage() {
-  // TODO: circle back to useSearch when SSR is fixed
-  // const { postId } = useSearch({ from: blogSearchRoute.id });
+function BlogPostPage() {
+  const { postId } = useParams({ from: blogPostRoute.id });
   const {
     state: { data: post },
     // Hard code variables for now
-  } = useLoaderInstance({ key: "post", variables: "first" });
-
+  } = useLoaderInstance({ key: "blogPost", variables: postId });
   return (
-    <>
-      <h1>{post.data.title}</h1>
-      <p>{post.body}</p>
-    </>
+    <article>
+      <h2>{post.data.title}</h2>
+      <pre>{post.body}</pre>
+    </article>
   );
 }
 
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   error404Route,
-  blogRoute.addChildren([blogSearchRoute]),
+  blogPostRoute,
+  // blogRoute.addChildren([blogPostRoute]),
 ]);
 
 export const router = new ReactRouter({ routeTree, context: { loaderClient } });
